@@ -1,8 +1,11 @@
+VERSION := 1.0
 PREFIX := /usr
 BINDIR := $(PREFIX)/bin
 SHAREDIR := $(PREFIX)/share
 MANDIR := $(SHAREDIR)/man
 MAN1DIR := $(MANDIR)/man1
+
+CPPFLAGS += '-DIFPIPE_VERSION="$(VERSION)"'
 
 all: ifpipe
 

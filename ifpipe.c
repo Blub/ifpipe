@@ -169,10 +169,24 @@ cleanup:
 }
 
 int main(int argc, char **argv) {
-	int i;
+	int i, ret = (EXIT_FAILURE);
+	FILE *help = stderr;
 
 	for (i = 1; i != argc; ++i) {
-		if (strcmp(argv[i], "-s") == 0) {
+		if (strcmp(argv[i], "-h") == 0 ||
+		    strcmp(argv[i], "--help") == 0)
+		{
+			help = stdout;
+			ret = (EXIT_SUCCESS);
+			break;
+		}
+		else if (strcmp(argv[i], "-V") == 0 ||
+		         strcmp(argv[i], "--version") == 0)
+		{
+			fprintf(stdout, "ifpipe " IFPIPE_VERSION "\n");
+			return (EXIT_SUCCESS);
+		}
+		else if (strcmp(argv[i], "-s") == 0) {
 			if (argc <= ++i)
 				break;
 			if (!set_buffer_size(argv[i]))
@@ -207,14 +221,14 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	fprintf(stderr, "usage: %s [options] IFNAME\n"
-	                "options:\n"
-	                "  -s BUFSIZE  packet buffer size (default: 16384)\n"
-	                "  -d DEVICE   tunnel device (default: /dev/net/tun)\n"
-	                "  --no-pi     set IFF_NO_PI (default)\n"
-	                "  --pi        don't set IFF_NO_PI\n"
-	                , argv[0]);
-	return (EXIT_FAILURE);
+	fprintf(help, "usage: %s [options] IFNAME\n"
+	              "options:\n"
+	              "  -s BUFSIZE  packet buffer size (default: 16384)\n"
+	              "  -d DEVICE   tunnel device (default: /dev/net/tun)\n"
+	              "  --no-pi     set IFF_NO_PI (default)\n"
+	              "  --pi        don't set IFF_NO_PI\n"
+	              , argv[0]);
+	return ret;
 }
 
 /* vim: noet:
