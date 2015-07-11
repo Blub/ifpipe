@@ -1,0 +1,38 @@
+.\" gmqpak mdoc manpage
+.Dd July 11, 2015
+.Dt IFPIPE 1 PRM
+.Os
+.Sh NAME
+.Nm ifpipe
+.Nd bidirectional tap device pipe
+.Sh SYNOPSIS
+.Nm ifpipe
+.Op Cm options
+.Ar devicename
+.Sh DESCRIPTION
+.Nm ifpipe
+opens a TAP device and acts as a bidirectional pipe between it and its standard
+input and output.
+.Sh OPTIONS
+.Bl -tag -width indent
+.It Fl s Ar SIZE
+Specify the a maximum packet size to assume. Longer packets are simply
+truncated
+.It Fl d Ar DEVICEFILE
+Open this file instead of the default tunnel device.
+.It Fl -no-pi
+Set the
+.Cm IFF_NO_PI
+flag on the interface. (default)
+.It Fl -pi
+Unset the
+.Cm IFF_NO_PI
+flag on the interface in order to include additional packet information in the
+tunnel.
+.El
+.Sh EXAMPLES
+TODO
+.Sh AUTHOR
+Wolfgang Bumiller <wry.git@bumiller.com>
+.Sh BUGS
+Are features.
