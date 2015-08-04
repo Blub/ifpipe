@@ -28,19 +28,20 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>         /* EXIT_SUCCESS, EXIT_FAILURE */
 #include <stdint.h>         /* uint16_t */
 #include <string.h>         /* strcmp, strncmp, strlen */
-#include <unistd.h>         /* read, write */
-#include <sys/types.h>      /* open */
-#include <sys/stat.h>       /* open */
+#include <unistd.h>         /* read, write, stat */
+#include <sys/types.h>      /* open, stat */
+#include <sys/stat.h>       /* open, stat */
 #include <fcntl.h>          /* open */
 #include <sys/ioctl.h>      /* ioctl */
 #include <sys/socket.h>     /* struct ifreq completion */
 #include <sys/select.h>     /* select */
-#include <linux/if.h>       /* struct ifreq */
-#include <linux/if_tun.h>   /* TUNSETIFF, IFF_NO_PI, IFF_TAP */
+#include <net/if.h>         /* if_indextoname, if_nametoindex, struct ifreq */
+#include <linux/if_tun.h>   /* TUN{GET,SET}IFF, IFF_{NO_PI,TAP,VNET_HDR} */
 
 static ssize_t buffer_size = 16384;
 static const char *tun_device = "/dev/net/tun";
 static int iff_pi = 0;
+static int iff_vnet_hdr = 0;
 
 static int set_buffer_size(const char *arg) {
 	char *endptr;
@@ -62,9 +63,33 @@ static int set_tun_device(const char *name) {
 	return 1;
 }
 
-static int setup_device(int fd, const char *tapname) {
+static int setup_macvtap_device(int fd) {
 	int err;
 	struct ifreq ifr;
+	memset(&ifr, 0, sizeof(ifr));
+
+	if ((err = ioctl(fd, TUNGETIFF, (void*)&ifr))) {
+		perror("ioctl(TUNGETIFF)");
+		return (EXIT_FAILURE);
+	}
+
+	if (iff_vnet_hdr)
+		ifr.ifr_flags |= IFF_VNET_HDR;
+	else
+		ifr.ifr_flags &= ~(IFF_VNET_HDR);
+
+	if ((err = ioctl(fd, TUNSETIFF, (void*)&ifr))) {
+		perror("ioctl(TUNSETIFF)");
+		return (EXIT_FAILURE);
+	}
+
+	return (EXIT_SUCCESS);
+}
+
+static int setup_tap_device(int fd, const char *tapname) {
+	int err;
+	struct ifreq ifr;
+
 	memset(&ifr, 0, sizeof(ifr));
 	ifr.ifr_flags = IFF_TAP | (iff_pi ? 0 : IFF_NO_PI);
 	strncpy(ifr.ifr_name, tapname, IFNAMSIZ);
@@ -98,26 +123,9 @@ static int pipedata(int from, int to, char *buffer, int *ret) {
 	return 1;
 }
 
-static int ifpipe(const char *tapname) {
-	int fd;
+static int ifpipe(int fd) {
 	char *buffer;
 	int ret = (EXIT_SUCCESS);
-
-	if (strlen(tapname) >= IFNAMSIZ) {
-		fprintf(stderr, "device name too long (max is %i): %s\n",
-		        (int)(IFNAMSIZ), tapname);
-		return (EXIT_FAILURE);
-	}
-
-	fd = open(tun_device, O_RDWR);
-	if (fd < 0) {
-		perror("open");
-		fprintf(stderr, "failed to open device %s\n", tun_device);
-		return 1;
-	}
-
-	if ((ret = setup_device(fd, tapname)) != (EXIT_SUCCESS))
-		goto cleanup;
 
 	buffer = (char*)malloc(buffer_size);
 	while (1) {
@@ -169,6 +177,112 @@ cleanup:
 	return ret;
 }
 
+static int open_tap_device(const char *tapname) {
+	int fd, ret;
+
+	if (strlen(tapname) >= IFNAMSIZ) {
+		fprintf(stderr, "device name too long (max is %i): %s\n",
+		        (int)(IFNAMSIZ), tapname);
+		return (EXIT_FAILURE);
+	}
+
+	fd = open(tun_device, O_RDWR);
+	if (fd < 0) {
+		perror("open");
+		fprintf(stderr, "failed to open device %s\n", tun_device);
+		return 1;
+	}
+
+	if ((ret = setup_tap_device(fd, tapname)) != (EXIT_SUCCESS)) {
+		close(fd);
+		return ret;
+	}
+
+	return ifpipe(fd);
+}
+
+static int open_macvtap_device(const char *tapdev) {
+	int fd, ret;
+	fd = open(tapdev, O_RDWR);
+	if (fd < 0) {
+		perror("open");
+		return (EXIT_FAILURE);
+	}
+
+	if ((ret = setup_macvtap_device(fd)) != (EXIT_SUCCESS)) {
+		close(fd);
+		return ret;
+	}
+
+	return ifpipe(fd);
+}
+
+/* got a device name, see if it's a macvtap, they have a tapXY dir */
+static int open_by_name_index(const char *name, unsigned int idx) {
+	int fd;
+	char tap[64]; /* at least /sys/class/net/<16 chars>/tap<8 chars> */
+	snprintf(tap, sizeof(tap), "/sys/class/net/%s/tap%u", name, idx);
+	fd = open(tap, O_RDONLY);
+	if (fd < 0)
+		return open_tap_device(name);
+	close(fd);
+	snprintf(tap, sizeof(tap), "/dev/tap%u", idx);
+	return open_macvtap_device(tap);
+}
+
+/* if it's a node file, check the major/minor number, find its name.  */
+static int open_by_node(const char *node) {
+	char dev[64];
+	struct stat stbuf;
+	ssize_t got;
+	unsigned int maj, min;
+	unsigned long idx;
+	int fd = open(node, O_RDONLY);
+	if (fd < 0) {
+		perror("open");
+		return (EXIT_FAILURE);
+	}
+	if (fstat(fd, &stbuf) != 0) {
+		perror("stat");
+		close(fd);
+		return (EXIT_FAILURE);
+	}
+	close(fd);
+	if (!S_ISCHR(stbuf.st_mode)) {
+		fprintf(stderr, "interface name or device file expected");
+		return (EXIT_FAILURE);
+	}
+	maj = major(stbuf.st_dev);
+	min = minor(stbuf.st_dev);
+	snprintf(dev, sizeof(dev), "/sys/dev/char/%u:%u/device/ifindex", maj, min);
+	fd = open(dev, O_RDONLY);
+	if (fd < 0) {
+		perror("open");
+		return (EXIT_FAILURE);
+	}
+	got = read(fd, dev, sizeof(dev)-1);
+	if (got <= 0) {
+		perror("read");
+		close(fd);
+		return (EXIT_FAILURE);
+	}
+	close(fd);
+	dev[got] = 0;
+	idx = strtoul(dev, NULL, 0);
+	if (!if_indextoname((unsigned int)idx, dev)) {
+		perror("failed to find interface name");
+		return (EXIT_FAILURE);
+	}
+	return open_by_name_index(dev, idx);
+}
+
+static int open_device(const char *name) {
+	unsigned int idx = if_nametoindex(name);
+	if (idx != 0)
+		return open_by_name_index(name, idx);
+	return open_by_node(name);
+}
+
 int main(int argc, char **argv) {
 	int i, ret = (EXIT_FAILURE);
 	FILE *help = stderr;
@@ -213,8 +327,14 @@ int main(int argc, char **argv) {
 		else if (strcmp(argv[i], "--no-pi") == 0) {
 			iff_pi = 0;
 		}
+		else if (strcmp(argv[i], "--vnet-hdr") == 0) {
+			iff_vnet_hdr = 1;
+		}
+		else if (strcmp(argv[i], "--no-vnet-hdr") == 0) {
+			iff_vnet_hdr = 0;
+		}
 		else if (i+1 == argc) {
-			return ifpipe(argv[i]);
+			return open_device(argv[i]);
 		}
 		else {
 			fprintf(stderr, "unrecognized option: %s\n", argv[i]);
@@ -222,15 +342,16 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	fprintf(help, "usage: %s [options] IFNAME\n"
+	fprintf(help, "usage: %s [options] { IFNAME | TAP_PATH }\n"
 	              "options:\n"
 	              "  -s BUFSIZE  packet buffer size (default: 16384)\n"
 	              "  -d DEVICE   tunnel device (default: /dev/net/tun)\n"
-	              "  --no-pi     set IFF_NO_PI (default)\n"
-	              "  --pi        don't set IFF_NO_PI\n"
+	              "  --no-pi     [tap] set IFF_NO_PI (default)\n"
+	              "  --pi        [tap] unset IFF_NO_PI\n"
+	              "  --vnet      [macvtap] set IFF_VNET_HDR (default)\n"
+	              "  --no-vnet   [macvtap] unset IFF_VNET_HDR\n"
 	              , argv[0]);
 	return ret;
 }
 
-/* vim: noet:
- */
+/* vim: set ts=4 sts=4 sw=4 noet: */
