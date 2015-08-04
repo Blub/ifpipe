@@ -243,12 +243,13 @@ static int open_by_node(const char *node) {
 		fprintf(stderr, "interface name or device file expected");
 		return (EXIT_FAILURE);
 	}
-	maj = major(stbuf.st_dev);
-	min = minor(stbuf.st_dev);
+	maj = major(stbuf.st_rdev);
+	min = minor(stbuf.st_rdev);
 	snprintf(dev, sizeof(dev), "/sys/dev/char/%u:%u/device/ifindex", maj, min);
 	fd = open(dev, O_RDONLY);
 	if (fd < 0) {
-		perror("open");
+		fprintf(stderr, "failed to get interface index from device: %s\n",
+		        strerror(errno));
 		return (EXIT_FAILURE);
 	}
 	got = read(fd, dev, sizeof(dev)-1);
