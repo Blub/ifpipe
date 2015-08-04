@@ -37,6 +37,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/select.h>     /* select */
 #include <net/if.h>         /* if_indextoname, if_nametoindex, struct ifreq */
 #include <linux/if_tun.h>   /* TUN{GET,SET}IFF, IFF_{NO_PI,TAP,VNET_HDR} */
+#include <errno.h>
 
 static ssize_t buffer_size = 16384;
 static const char *tun_device = "/dev/net/tun";
