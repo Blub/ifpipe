@@ -63,39 +63,29 @@ static int set_tun_device(const char *name) {
 	return 1;
 }
 
-static int setup_macvtap_device(int fd) {
+static int setup_device(int fd, const char *setname) {
 	int err;
 	struct ifreq ifr;
 	memset(&ifr, 0, sizeof(ifr));
 
-	if ((err = ioctl(fd, TUNGETIFF, (void*)&ifr))) {
-		perror("ioctl(TUNGETIFF)");
-		return (EXIT_FAILURE);
+	if (!setname) {
+		if ((err = ioctl(fd, TUNGETIFF, (void*)&ifr))) {
+			perror("ioctl(TUNGETIFF)");
+			return (EXIT_FAILURE);
+		}
 	}
 
+	ifr.ifr_flags &= ~(IFF_VNET_HDR | IFF_NO_PI);
 	if (iff_vnet_hdr)
 		ifr.ifr_flags |= IFF_VNET_HDR;
-	else
-		ifr.ifr_flags &= ~(IFF_VNET_HDR);
+	if (!iff_pi)
+		ifr.ifr_flags |= IFF_NO_PI;
+
+	if (setname)
+		strncpy(ifr.ifr_name, setname, IFNAMSIZ);
 
 	if ((err = ioctl(fd, TUNSETIFF, (void*)&ifr))) {
 		perror("ioctl(TUNSETIFF)");
-		return (EXIT_FAILURE);
-	}
-
-	return (EXIT_SUCCESS);
-}
-
-static int setup_tap_device(int fd, const char *tapname) {
-	int err;
-	struct ifreq ifr;
-
-	memset(&ifr, 0, sizeof(ifr));
-	ifr.ifr_flags = IFF_TAP | (iff_pi ? 0 : IFF_NO_PI);
-	strncpy(ifr.ifr_name, tapname, IFNAMSIZ);
-
-	if ((err = ioctl(fd, TUNSETIFF, (void*)&ifr))) {
-		perror("ioctl");
 		return (EXIT_FAILURE);
 	}
 
@@ -193,7 +183,7 @@ static int open_tap_device(const char *tapname) {
 		return 1;
 	}
 
-	if ((ret = setup_tap_device(fd, tapname)) != (EXIT_SUCCESS)) {
+	if ((ret = setup_device(fd, tapname)) != (EXIT_SUCCESS)) {
 		close(fd);
 		return ret;
 	}
@@ -209,7 +199,7 @@ static int open_macvtap_device(const char *tapdev) {
 		return (EXIT_FAILURE);
 	}
 
-	if ((ret = setup_macvtap_device(fd)) != (EXIT_SUCCESS)) {
+	if ((ret = setup_device(fd, NULL)) != (EXIT_SUCCESS)) {
 		close(fd);
 		return ret;
 	}
@@ -348,8 +338,8 @@ int main(int argc, char **argv) {
 	              "  -d DEVICE   tunnel device (default: /dev/net/tun)\n"
 	              "  --no-pi     [tap] set IFF_NO_PI (default)\n"
 	              "  --pi        [tap] unset IFF_NO_PI\n"
-	              "  --vnet      [macvtap] set IFF_VNET_HDR (default)\n"
-	              "  --no-vnet   [macvtap] unset IFF_VNET_HDR\n"
+	              "  --vnet      [macvtap] set IFF_VNET_HDR\n"
+	              "  --no-vnet   [macvtap] unset IFF_VNET_HDR (default)\n"
 	              , argv[0]);
 	return ret;
 }
