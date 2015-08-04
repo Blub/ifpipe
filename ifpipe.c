@@ -317,10 +317,12 @@ int main(int argc, char **argv) {
 		else if (strcmp(argv[i], "--no-pi") == 0) {
 			iff_pi = 0;
 		}
-		else if (strcmp(argv[i], "--vnet-hdr") == 0) {
+		else if (strcmp(argv[i], "--vnet") == 0 ||
+		         strcmp(argv[i], "--vnet-hdr") == 0) {
 			iff_vnet_hdr = 1;
 		}
-		else if (strcmp(argv[i], "--no-vnet-hdr") == 0) {
+		else if (strcmp(argv[i], "--no-vnet") == 0 ||
+		         strcmp(argv[i], "--no-vnet-hdr") == 0) {
 			iff_vnet_hdr = 0;
 		}
 		else if (i+1 == argc) {
