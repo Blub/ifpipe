@@ -164,6 +164,7 @@ static int ifpipe(const char *tapname) {
 	}
 
 cleanup:
+	free(buffer);
 	close(fd);
 	return ret;
 }
