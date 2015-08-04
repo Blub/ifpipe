@@ -68,22 +68,23 @@ static int setup_device(int fd, const char *setname) {
 	struct ifreq ifr;
 	memset(&ifr, 0, sizeof(ifr));
 
-	if (!setname) {
+	if (setname) {
+		strncpy(ifr.ifr_name, setname, IFNAMSIZ);
+		if (!iff_pi)
+			ifr.ifr_flags |= IFF_NO_PI;
+	} else {
 		if ((err = ioctl(fd, TUNGETIFF, (void*)&ifr))) {
 			perror("ioctl(TUNGETIFF)");
 			return (EXIT_FAILURE);
 		}
 	}
 
-	ifr.ifr_flags &= ~(IFF_VNET_HDR | IFF_NO_PI);
 	if (iff_vnet_hdr)
 		ifr.ifr_flags |= IFF_VNET_HDR;
-	if (!iff_pi)
-		ifr.ifr_flags |= IFF_NO_PI;
+	else
+		ifr.ifr_flags &= ~(IFF_VNET_HDR);
 
-	if (setname)
-		strncpy(ifr.ifr_name, setname, IFNAMSIZ);
-
+	ifr.ifr_flags |= IFF_TAP;
 	if ((err = ioctl(fd, TUNSETIFF, (void*)&ifr))) {
 		perror("ioctl(TUNSETIFF)");
 		return (EXIT_FAILURE);
